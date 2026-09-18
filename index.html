@@ -1,10 +1,48 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Semiconductor Forum OX</title><link rel="stylesheet" href="style.css"></head><body><main class="wrap" style="max-width:720px"><div class="brand">2026 SEMICONDUCTOR FORUM · LIVE POLL</div><h1 class="title" id="question">잠시만 기다려 주세요.</h1><div class="row space"><span class="badge" id="state">연결 중</span><span class="timer" id="timer">--:--</span></div><section class="card" style="margin-top:22px"><div class="muted">질문이 시작되면 O 또는 X를 선택해 주세요.</div><div class="choices"><button id="o" class="choice o" disabled>O</button><button id="x" class="choice" disabled>X</button></div><div id="msg" class="status" style="margin-top:18px">Firebase 연결 중...</div></section></main><script type="module">
-import{auth,db,signInAnonymously,onAuthStateChanged,ref,onValue,set,left,clock}from"./app.js";
-const $=i=>document.getElementById(i);let user,event={},qs={},vote=null,watched="",tick;
-signInAnonymously(auth).catch(()=>{$("msg").innerHTML='<span class="err">연결에 실패했습니다. 새로고침해 주세요.</span>'});
-onAuthStateChanged(auth,u=>{user=u;if(u){$("msg").innerHTML='<span class="ok">연결되었습니다.</span>';watch()}});
-onValue(ref(db,"questions"),s=>{qs=s.val()||{};render()});onValue(ref(db,"event"),s=>{event=s.val()||{};watch();render()});
-function watch(){if(!user||!event.currentQuestion||watched===event.currentQuestion)return;watched=event.currentQuestion;vote=null;onValue(ref(db,`votes/${watched}/${user.uid}`),s=>{vote=s.val();render()})}
-function render(){const q=qs[event.currentQuestion];$("question").textContent=q?.text||"곧 질문이 시작됩니다.";const voting=event.status==="voting"&&left(event.closesAt)>0;$("state").textContent=voting?"투표 진행 중":event.status==="closed"?"투표 종료":"대기 중";$("o").disabled=$("x").disabled=!user||!voting||!!vote;if(vote)$("msg").innerHTML=`<span class="ok">✓ 참여 완료 · ${vote}를 선택하셨습니다.</span>`;else if(voting)$("msg").textContent="한 번 선택하면 변경할 수 없습니다.";else $("msg").textContent="현재 투표를 기다리고 있습니다.";clearInterval(tick);const d=()=>{$("timer").textContent=voting?clock(left(event.closesAt)):"--:--";if(voting&&left(event.closesAt)<=0){$("o").disabled=$("x").disabled=true;$("state").textContent="투표 종료"}};d();if(voting)tick=setInterval(d,250)}
-async function cast(v){if(!user||vote)return;try{await set(ref(db,`votes/${event.currentQuestion}/${user.uid}`),v)}catch{$("msg").innerHTML='<span class="err">저장되지 않았습니다. 다시 시도해 주세요.</span>'}}$("o").onclick=()=>cast("O");$("x").onclick=()=>cast("X");
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Semiconductor Forum OX</title><link rel="stylesheet" href="style.css"></head>
+<body><main class="wrap" style="max-width:720px"><div class="brand">2026 SEMICONDUCTOR FORUM · LIVE POLL</div>
+<h1 class="title" id="question">잠시만 기다려 주세요.</h1><div class="row space"><span class="badge" id="state">연결 중</span><span class="timer" id="timer">--:--</span></div>
+<section id="voteCard" class="card" style="margin-top:22px"><div class="muted">O 또는 X를 선택해 주세요.</div><div class="choices"><button id="o" class="choice o" disabled>O</button><button id="x" class="choice" disabled>X</button></div><div id="msg" class="status" style="margin-top:18px">Firebase 연결 중...</div></section>
+<section id="resultCard" class="card" style="margin-top:22px" hidden><div class="row space"><h2 style="margin:0">실시간 결과</h2><span id="myChoice" class="badge"></span></div>
+<div style="margin-top:22px"><div class="row space"><b>O</b><b id="op">0%</b></div><div class="bar"><div id="obar" class="fill"></div></div><div class="muted"><span id="oc">0</span>명</div></div>
+<div style="margin-top:22px"><div class="row space"><b>X</b><b id="xp">0%</b></div><div class="bar"><div id="xbar" class="fill x"></div></div><div class="muted"><span id="xc">0</span>명 · 총 <span id="total">0</span>명 참여</div></div>
+<div class="status" style="margin-top:18px">다른 참여자의 선택이 들어오면 이 화면에 바로 반영됩니다.</div></section></main>
+<script type="module">
+import{auth,db,signInAnonymously,onAuthStateChanged,ref,onValue,set,countVotes,pct,left,clock}from"./app.js";
+const $=i=>document.getElementById(i);let user=null,event={},qs={},vote=null,votes={},voteUnsub=null,allVotesUnsub=null,tick=null,currentQ=null,serverOffset=0;
+onValue(ref(db,".info/serverTimeOffset"),s=>serverOffset=s.val()||0);
+const now=()=>Date.now()+serverOffset;
+signInAnonymously(auth).catch(e=>$("msg").innerHTML=`<span class="err">연결 실패: ${e.message}</span>`);
+onAuthStateChanged(auth,u=>{user=u;if(u){$("msg").innerHTML='<span class="ok">✓ 연결되었습니다.</span>';switchQuestion()}});
+onValue(ref(db,"questions"),s=>{qs=s.val()||{};render()});
+onValue(ref(db,"event"),s=>{event=s.val()||{};switchQuestion();render()});
+
+function switchQuestion(){
+ if(!user||!event.currentQuestion||currentQ===event.currentQuestion)return;
+ currentQ=event.currentQuestion; vote=null; votes={};
+ if(voteUnsub)voteUnsub(); if(allVotesUnsub)allVotesUnsub();
+ voteUnsub=onValue(ref(db,`votes/${currentQ}/${user.uid}`),s=>{vote=s.val();render()});
+ allVotesUnsub=onValue(ref(db,`votes/${currentQ}`),s=>{votes=s.val()||{};render()});
+}
+function render(){
+ const q=qs[event.currentQuestion];$("question").textContent=q?.text||"곧 질문이 시작됩니다.";
+ const voting=event.status==="voting"&&Number(event.closesAt||0)>now();
+ $("state").textContent=voting?"투표 진행 중":event.status==="closed"||Number(event.closesAt||0)<=now()&&event.status==="voting"?"투표 종료":"대기 중";
+ $("o").disabled=$("x").disabled=!user||!voting||!!vote;
+ const showResult=!!vote;
+ $("voteCard").hidden=showResult;$("resultCard").hidden=!showResult;
+ if(vote){
+   $("myChoice").textContent=`내 선택 · ${vote}`;
+   const c=countVotes(votes),o=pct(c.o,c.total),x=pct(c.x,c.total);
+   $("op").textContent=o+"%";$("xp").textContent=x+"%";$("oc").textContent=c.o;$("xc").textContent=c.x;$("total").textContent=c.total;
+   $("obar").style.width=o+"%";$("xbar").style.width=x+"%";
+ }
+ clearInterval(tick);const d=()=>{$("timer").textContent=voting?clock(Math.max(0,Number(event.closesAt)-now())):"--:--";if(voting&&Number(event.closesAt)<=now()){ $("o").disabled=$("x").disabled=true;$("state").textContent="투표 종료";}};d();if(voting)tick=setInterval(d,250);
+}
+async function cast(v){
+ if(!user||vote||!event.currentQuestion)return;
+ $("o").disabled=$("x").disabled=true;$("msg").textContent="선택을 저장하고 있습니다...";
+ try{await set(ref(db,`votes/${event.currentQuestion}/${user.uid}`),v)}
+ catch(e){$("o").disabled=$("x").disabled=false;$("msg").innerHTML=`<span class="err">저장 실패: ${e.message}</span>`}
+}
+$("o").onclick=()=>cast("O");$("x").onclick=()=>cast("X");
 </script></body></html>

@@ -1,0 +1,25 @@
+{
+  "rules": {
+    "event": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.uid == 'zY2MqDPUnmg6MdUoJFmb5ap8pWh2'"
+    },
+    "questions": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.uid == 'zY2MqDPUnmg6MdUoJFmb5ap8pWh2'",
+      ".validate": "newData.numChildren() <= 5",
+      "$questionId": {
+        ".validate": "!newData.exists() || (newData.hasOnly(['text']) && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 300)"
+      }
+    },
+    "votes": {
+      "$questionId": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == 'zY2MqDPUnmg6MdUoJFmb5ap8pWh2'",
+        "$uid": {
+          ".write": "auth != null && auth.uid == $uid && !data.exists() && newData.exists() && (newData.val() == 'O' || newData.val() == 'X') && root.child('event/status').val() == 'voting' && now <= root.child('event/closesAt').val()"
+        }
+      }
+    }
+  }
+}

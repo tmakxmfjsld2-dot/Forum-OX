@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import { getAuth, signInAnonymously, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
-import { getDatabase, ref, onValue, set, update, remove, push } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-database.js";
+import { getDatabase, ref, onValue, set, update, remove, push, get } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCl5R2rApLf1RCNK904srL4qe5DpNEs_WQ",
@@ -14,7 +14,7 @@ const firebaseConfig = {
 export const ADMIN_UID="zY2MqDPUnmg6MdUoJFmb5ap8pWh2";
 const app=initializeApp(firebaseConfig);
 export const auth=getAuth(app), db=getDatabase(app);
-export {signInAnonymously,signInWithEmailAndPassword,onAuthStateChanged,signOut,ref,onValue,set,update,remove,push};
+export {signInAnonymously,signInWithEmailAndPassword,onAuthStateChanged,signOut,ref,onValue,set,update,remove,push,get};
 export const countVotes=(v={})=>{const a=Object.values(v||{}),o=a.filter(x=>x==="O").length,x=a.filter(x=>x==="X").length;return{o,x,total:o+x}};
 export const pct=(n,t)=>t?Math.round(n/t*1000)/10:0;
 export const left=t=>Math.max(0,Number(t||0)-Date.now());
