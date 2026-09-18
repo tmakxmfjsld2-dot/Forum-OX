@@ -1,8 +1,120 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OX Admin</title><link rel="stylesheet" href="style.css"></head><body><main class="wrap"><div class="brand">2026 SEMICONDUCTOR FORUM · ADMIN</div><h1>O/X Live Poll Control</h1><section id="login" class="card" style="max-width:520px"><h2>관리자 로그인</h2><label>이메일</label><input id="email" type="email"><label>비밀번호</label><input id="pw" type="password"><button id="loginBtn" class="btn primary" style="margin-top:16px">로그인</button><div id="loginMsg" class="status" style="margin-top:12px">Firebase 관리자 계정으로 로그인하세요.</div></section><section id="panel" hidden><div class="grid2"><div class="card"><h2>현재 문항</h2><h2 id="current">문항 없음</h2><label>진행 시간</label><select id="duration"><option value="30">30초</option><option value="60">1분</option></select><label>결과 공개</label><select id="mode"><option value="live">실시간 공개</option><option value="hidden">종료 후 공개</option></select><div class="row" style="margin-top:16px"><button id="start" class="btn primary">START</button><button id="stop" class="btn danger">강제 종료</button><button id="reveal" class="btn">결과보기</button></div><div class="row" style="margin-top:22px"><div><span class="muted">참여</span><div id="total" class="metric">0</div></div><div><span class="muted">O</span><div id="oc" class="metric">0</div></div><div><span class="muted">X</span><div id="xc" class="metric">0</div></div></div><div id="timer" class="timer">--:--</div><button id="reset" class="btn danger" style="margin-top:18px">현재 결과 초기화</button></div><div class="card"><h2>문항 관리</h2><label>문항</label><textarea id="qtext" placeholder="질문을 입력하세요"></textarea><div class="row"><button id="add" class="btn primary">문항 추가</button><button id="save" class="btn">현재 문항 수정</button><button id="del" class="btn danger">삭제</button></div><div id="saveMsg" class="status" style="margin-top:12px">문항을 입력한 뒤 ‘문항 추가’를 눌러주세요.</div><h3>등록된 문항 <span id="qcount" class="badge">0</span></h3><div id="qlist" class="list" style="margin-top:12px"></div></div></div><div class="row" style="margin-top:16px"><button id="logout" class="btn">로그아웃</button><a href="display.html" target="_blank" class="btn" style="text-decoration:none">LED 화면 열기</a></div></section></main><script type="module">
-import{auth,db,ADMIN_UID,signInWithEmailAndPassword,onAuthStateChanged,signOut,ref,onValue,set,update,remove,push,countVotes,esc,left,clock}from"./app.js";const $=i=>document.getElementById(i);let event={},qs={},votes={},votePath="",tick;
-$("loginBtn").onclick=async()=>{try{await signInWithEmailAndPassword(auth,$("email").value,$("pw").value)}catch{$("loginMsg").innerHTML='<span class="err">로그인 정보를 확인해 주세요.</span>'}};onAuthStateChanged(auth,u=>{const ok=u?.uid===ADMIN_UID;$("login").hidden=ok;$("panel").hidden=!ok;if(u&&!ok)signOut(auth)});$("logout").onclick=()=>signOut(auth);
-onValue(ref(db,"event"),s=>{event=s.val()||{};watchVotes();render()});onValue(ref(db,"questions"),s=>{qs=s.val()||{};render()});
-function watchVotes(){if(!event.currentQuestion||votePath===event.currentQuestion)return;votePath=event.currentQuestion;votes={};onValue(ref(db,`votes/${votePath}`),s=>{votes=s.val()||{};render()})}
-function render(){const q=qs[event.currentQuestion];$("current").textContent=q?.text||"문항을 추가하세요.";const c=countVotes(votes);$("total").textContent=c.total;$("oc").textContent=c.o;$("xc").textContent=c.x;$("qcount").textContent=Object.keys(qs).length;$("qlist").innerHTML=Object.entries(qs).map(([id,q])=>`<div class="qitem ${id===event.currentQuestion?"active":""}" data-id="${id}">${esc(q.text)}</div>`).join("");document.querySelectorAll(".qitem").forEach(e=>e.onclick=()=>set(ref(db,"event/currentQuestion"),e.dataset.id));$("duration").value=String(event.duration||30);$("mode").value=event.resultMode||"live";clearInterval(tick);const d=()=>$("timer").textContent=event.status==="voting"?clock(left(event.closesAt)):"--:--";d();tick=setInterval(d,250)}
-$("add").onclick=async()=>{const t=$("qtext").value.trim();if(!t){$("saveMsg").innerHTML='<span class="err">문항 내용을 먼저 입력해 주세요.</span>';return} $("add").disabled=true;$("saveMsg").textContent="문항을 저장하고 있습니다...";try{const r=push(ref(db,"questions"));await set(r,{text:t});await set(ref(db,"event/currentQuestion"),r.key);$("qtext").value="";$("saveMsg").innerHTML='<span class="ok">✓ 문항이 정상적으로 등록되었습니다.</span>'}catch(e){$("saveMsg").innerHTML='<span class="err">저장에 실패했습니다. 입력 내용은 유지했습니다. '+e.message+'</span>'}finally{$("add").disabled=false}};$("save").onclick=async()=>{if(event.status==="voting")return alert("진행 중에는 수정할 수 없습니다.");const t=$("qtext").value.trim();if(t&&event.currentQuestion)await set(ref(db,`questions/${event.currentQuestion}/text`),t)};$("del").onclick=async()=>{if(event.status==="voting")return alert("진행 중에는 삭제할 수 없습니다.");if(event.currentQuestion&&confirm("현재 문항을 삭제할까요?")){await remove(ref(db,`questions/${event.currentQuestion}`));await remove(ref(db,`votes/${event.currentQuestion}`));await set(ref(db,"event/currentQuestion"),null)}};$("start").onclick=async()=>{if(!event.currentQuestion)return alert("문항을 먼저 선택하세요.");const d=Number($("duration").value),n=Date.now();await update(ref(db,"event"),{status:"voting",duration:d,startedAt:n,closesAt:n+d*1000,resultMode:$("mode").value,showResults:$("mode").value==="live"})};$("stop").onclick=()=>update(ref(db,"event"),{status:"closed",closesAt:Date.now()});$("reveal").onclick=()=>update(ref(db,"event"),{status:"closed",showResults:true});$("reset").onclick=async()=>{if(event.currentQuestion&&confirm("현재 문항의 모든 투표를 초기화할까요?"))await remove(ref(db,`votes/${event.currentQuestion}`))};
+import{auth,db,ADMIN_UID,signInWithEmailAndPassword,onAuthStateChanged,signOut,ref,onValue,set,update,remove,push,countVotes,esc,left,clock}from"./app.js";
+const $=i=>document.getElementById(i);
+let event={},qs={},votes={},votePath="",tick,listenersStarted=false;
+const say=(html)=>{$("saveMsg").innerHTML=html};
+
+$("loginBtn").onclick=async()=>{
+  $("loginMsg").textContent="로그인 중...";
+  try{await signInWithEmailAndPassword(auth,$("email").value.trim(),$("pw").value)}
+  catch(e){$("loginMsg").innerHTML='<span class="err">로그인 정보를 확인해 주세요.</span>'}
+};
+$("logout").onclick=()=>signOut(auth);
+
+onAuthStateChanged(auth,u=>{
+  const ok=u?.uid===ADMIN_UID;
+  $("login").hidden=ok; $("panel").hidden=!ok;
+  if(u&&!ok){signOut(auth);return}
+  if(ok&&!listenersStarted){listenersStarted=true; startListeners()}
+});
+
+function startListeners(){
+  onValue(ref(db,"event"),snap=>{event=snap.val()||{};watchVotes();render()},
+    e=>say(`<span class="err">event 읽기 오류: ${esc(e.message)}</span>`));
+  onValue(ref(db,"questions"),snap=>{qs=snap.val()||{};render()},
+    e=>say(`<span class="err">문항 목록 읽기 오류: ${esc(e.message)}</span>`));
+}
+
+function watchVotes(){
+  if(!event.currentQuestion||votePath===event.currentQuestion)return;
+  votePath=event.currentQuestion; votes={};
+  onValue(ref(db,`votes/${votePath}`),snap=>{votes=snap.val()||{};render()});
+}
+
+function render(){
+  const q=qs[event.currentQuestion];
+  $("current").textContent=q?.text||"문항을 추가하거나 선택하세요.";
+  const c=countVotes(votes);
+  $("total").textContent=c.total;$("oc").textContent=c.o;$("xc").textContent=c.x;
+  $("qcount").textContent=Object.keys(qs).length+" / 5";
+  const entries=Object.entries(qs);
+  $("qlist").innerHTML=entries.length
+    ? entries.map(([id,q],i)=>`<div class="qitem ${id===event.currentQuestion?"active":""}" data-id="${id}"><b>Q${i+1}.</b> ${esc(q.text)}</div>`).join("")
+    : '<div class="status">아직 저장된 문항이 없습니다.</div>';
+  document.querySelectorAll(".qitem").forEach(el=>el.onclick=async()=>{
+    try{
+      await set(ref(db,"event/currentQuestion"),el.dataset.id);
+      $("qtext").value=qs[el.dataset.id]?.text||"";
+      say('<span class="ok">✓ 문항을 선택했습니다. 내용을 바꾼 뒤 ‘현재 문항 수정’을 누르면 수정됩니다.</span>');
+    }catch(e){say(`<span class="err">문항 선택 실패: ${esc(e.message)}</span>`)}
+  });
+  $("duration").value=String(event.duration||30);
+  $("mode").value=event.resultMode||"live";
+  $("add").disabled=Object.keys(qs).length>=5;
+  clearInterval(tick);
+  const draw=()=>{$("timer").textContent=event.status==="voting"?clock(left(event.closesAt)):"--:--"};
+  draw();tick=setInterval(draw,250);
+}
+
+$("add").onclick=async()=>{
+  const t=$("qtext").value.trim();
+  if(!t)return say('<span class="err">문항 내용을 먼저 입력해 주세요.</span>');
+  if(Object.keys(qs).length>=5)return say('<span class="err">문항은 최대 5개까지 등록할 수 있습니다.</span>');
+  $("add").disabled=true;
+  say("Firebase에 저장 중...");
+  try{
+    const r=push(ref(db,"questions"));
+    await set(r,{text:t});
+    await set(ref(db,"event/currentQuestion"),r.key);
+    // Do not clear until the write promise has completed.
+    $("qtext").value="";
+    say('<span class="ok">✓ 문항이 저장되었습니다. 아래 등록 문항 목록을 확인해 주세요.</span>');
+  }catch(e){
+    say(`<span class="err">저장 실패: ${esc(e.message)} · 입력 내용은 유지했습니다.</span>`);
+  }finally{
+    $("add").disabled=Object.keys(qs).length>=5;
+  }
+};
+
+$("save").onclick=async()=>{
+  if(event.status==="voting")return say('<span class="err">투표 진행 중에는 문항을 수정할 수 없습니다.</span>');
+  const t=$("qtext").value.trim();
+  if(!t)return say('<span class="err">수정할 문항 내용을 입력해 주세요.</span>');
+  if(!event.currentQuestion||!qs[event.currentQuestion])return say('<span class="err">아래 목록에서 수정할 문항을 먼저 선택해 주세요.</span>');
+  try{
+    await set(ref(db,`questions/${event.currentQuestion}/text`),t);
+    say('<span class="ok">✓ 현재 문항이 저장되었습니다.</span>');
+  }catch(e){say(`<span class="err">수정 실패: ${esc(e.message)}</span>`)}
+};
+
+$("del").onclick=async()=>{
+  if(event.status==="voting")return say('<span class="err">투표 진행 중에는 삭제할 수 없습니다.</span>');
+  if(!event.currentQuestion||!qs[event.currentQuestion])return say('<span class="err">삭제할 문항을 먼저 선택해 주세요.</span>');
+  if(!confirm("현재 문항을 삭제할까요?"))return;
+  try{
+    await remove(ref(db,`questions/${event.currentQuestion}`));
+    // votes deletion can depend on rules; do it separately and tolerate no existing votes.
+    try{await remove(ref(db,`votes/${event.currentQuestion}`))}catch(_){}
+    await set(ref(db,"event/currentQuestion"),null);
+    $("qtext").value="";
+    say('<span class="ok">✓ 문항을 삭제했습니다.</span>');
+  }catch(e){say(`<span class="err">삭제 실패: ${esc(e.message)}</span>`)}
+};
+
+$("start").onclick=async()=>{
+  if(!event.currentQuestion||!qs[event.currentQuestion])return alert("문항을 먼저 선택하세요.");
+  const d=Number($("duration").value),n=Date.now();
+  try{
+    await update(ref(db,"event"),{status:"voting",duration:d,startedAt:n,closesAt:n+d*1000,resultMode:$("mode").value,showResults:$("mode").value==="live"});
+  }catch(e){alert("START 실패: "+e.message)}
+};
+$("stop").onclick=()=>update(ref(db,"event"),{status:"closed",closesAt:Date.now()});
+$("reveal").onclick=()=>update(ref(db,"event"),{status:"closed",showResults:true});
+$("reset").onclick=async()=>{
+  if(!event.currentQuestion)return;
+  if(confirm("현재 문항의 모든 투표를 초기화할까요?")){
+    try{await remove(ref(db,`votes/${event.currentQuestion}`));say('<span class="ok">✓ 현재 결과를 초기화했습니다.</span>')}
+    catch(e){say(`<span class="err">초기화 실패: ${esc(e.message)}</span>`)}
+  }
+};
 </script></body></html>
